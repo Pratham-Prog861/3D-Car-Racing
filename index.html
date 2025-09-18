@@ -243,34 +243,58 @@
     let isLeftPressed = false;
     let isRightPressed = false;
     
+    // Performance optimization variables
+    let obstaclePool = [];
+    let maxObstacles = isMobile ? 5 : 10;
+    let renderDistance = isMobile ? 60 : 100;
+    let treeDistance = isMobile ? 40 : 80;
+    let animationFrame = 0;
+    let performanceMode = isMobile ? 'low' : 'high';
+    
+    // LOD (Level of Detail) settings
+    const LOD_SETTINGS = {
+      high: { treeSegments: 16, wheelSegments: 16, carDetails: true },
+      medium: { treeSegments: 12, wheelSegments: 12, carDetails: true },
+      low: { treeSegments: 8, wheelSegments: 8, carDetails: false }
+    };
+    
     const scoreDisplay = document.getElementById("scoreDisplay");
     const speedDisplay = document.getElementById("speedDisplay");
     const loadingScreen = document.getElementById("loadingScreen");
 
-    // Create detailed car model
+    // Create optimized car model
     function createCar() {
       carGroup.position.set(0, 0, 0);
       
-      // Car body
-      const bodyGeometry = new THREE.BoxGeometry(1.8, 0.6, 4);
-      const bodyMaterial = new THREE.MeshPhongMaterial({ 
-        color: 0xff3030,
-        shininess: 100,
-        specular: 0x111111
-      });
+      // Simplified car body for mobile
+      const bodySize = isMobile ? [1.6, 0.5, 3.5] : [1.8, 0.6, 4];
+      const bodyGeometry = new THREE.BoxGeometry(...bodySize);
+      
+      // Use simpler materials on mobile
+      const bodyMaterial = isMobile ? 
+        new THREE.MeshLambertMaterial({ color: 0xff3030 }) :
+        new THREE.MeshPhongMaterial({ 
+          color: 0xff3030,
+          shininess: 100,
+          specular: 0x111111
+        });
+      
       const carBody = new THREE.Mesh(bodyGeometry, bodyMaterial);
       carBody.position.set(0, 0.8, 0);
       carGroup.add(carBody);
       
-      // Car roof
-      const roofGeometry = new THREE.BoxGeometry(1.4, 0.8, 2.5);
-      const roofMaterial = new THREE.MeshPhongMaterial({ 
-        color: 0x2a2a2a,
-        shininess: 80
-      });
-      const carRoof = new THREE.Mesh(roofGeometry, roofMaterial);
-      carRoof.position.set(0, 1.5, -0.2);
-      carGroup.add(carRoof);
+      // Simplified car roof
+      if (LOD_SETTINGS[performanceMode].carDetails) {
+        const roofSize = isMobile ? [1.2, 0.7, 2.2] : [1.4, 0.8, 2.5];
+        const roofGeometry = new THREE.BoxGeometry(...roofSize);
+        const roofMaterial = isMobile ? 
+          new THREE.MeshLambertMaterial({ color: 0x2a2a2a }) :
+          new THREE.MeshPhongMaterial({ color: 0x2a2a2a, shininess: 80 });
+        
+        const carRoof = new THREE.Mesh(roofGeometry, roofMaterial);
+        carRoof.position.set(0, 1.5, -0.2);
+        carGroup.add(carRoof);
+      }
       
       // Windows
       const windowMaterial = new THREE.MeshPhongMaterial({ 
@@ -287,9 +311,13 @@
       frontWindow.rotation.x = -0.1;
       carGroup.add(frontWindow);
       
-      // Wheels
-      const wheelGeometry = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 16);
-      const wheelMaterial = new THREE.MeshPhongMaterial({ color: 0x222222 });
+      // Optimized wheels
+      const wheelSegments = LOD_SETTINGS[performanceMode].wheelSegments;
+      const wheelSize = isMobile ? [0.35, 0.35, 0.25] : [0.4, 0.4, 0.3];
+      const wheelGeometry = new THREE.CylinderGeometry(wheelSize[0], wheelSize[1], wheelSize[2], wheelSegments);
+      const wheelMaterial = isMobile ? 
+        new THREE.MeshLambertMaterial({ color: 0x222222 }) :
+        new THREE.MeshPhongMaterial({ color: 0x222222 });
       
       const wheelPositions = [
         [-1.2, 0.4, 1.3],   // Front left
@@ -307,52 +335,66 @@
         wheels.push(wheel);
       });
       
-      // Headlights
-      const headlightGeometry = new THREE.SphereGeometry(0.15, 8, 8);
-      const headlightMaterial = new THREE.MeshPhongMaterial({ 
-        color: 0xffffaa,
-        emissive: 0x444400
-      });
-      
-      const leftHeadlight = new THREE.Mesh(headlightGeometry, headlightMaterial);
-      leftHeadlight.position.set(-0.6, 1, 2.1);
-      carGroup.add(leftHeadlight);
-      
-      const rightHeadlight = new THREE.Mesh(headlightGeometry, headlightMaterial);
-      rightHeadlight.position.set(0.6, 1, 2.1);
-      carGroup.add(rightHeadlight);
+      // Simplified headlights for performance
+      if (LOD_SETTINGS[performanceMode].carDetails) {
+        const headlightSegments = isMobile ? 6 : 8;
+        const headlightGeometry = new THREE.SphereGeometry(0.15, headlightSegments, headlightSegments);
+        const headlightMaterial = isMobile ?
+          new THREE.MeshLambertMaterial({ color: 0xffffaa }) :
+          new THREE.MeshPhongMaterial({ color: 0xffffaa, emissive: 0x444400 });
+        
+        const leftHeadlight = new THREE.Mesh(headlightGeometry, headlightMaterial);
+        leftHeadlight.position.set(-0.6, 1, 2.1);
+        carGroup.add(leftHeadlight);
+        
+        const rightHeadlight = new THREE.Mesh(headlightGeometry, headlightMaterial);
+        rightHeadlight.position.set(0.6, 1, 2.1);
+        carGroup.add(rightHeadlight);
+      }
       
       scene.add(carGroup);
       car = carGroup; // For compatibility with existing code
     }
     
-    // Create obstacle car
+    // Create optimized obstacle car with object pooling
     function createObstacleCar() {
+      // Reuse from pool if available
+      if (obstaclePool.length > 0) {
+        const reusedCar = obstaclePool.pop();
+        reusedCar.visible = true;
+        return reusedCar;
+      }
+      
       const obsCarGroup = new THREE.Group();
       
       const colors = [0x0066cc, 0x00cc66, 0xcccc00, 0xcc6600, 0x9966cc];
       const randomColor = colors[Math.floor(Math.random() * colors.length)];
       
-      // Obstacle car body (smaller than player car)
-      const obsBodyGeometry = new THREE.BoxGeometry(1.5, 0.5, 3.5);
-      const obsBodyMaterial = new THREE.MeshPhongMaterial({ 
-        color: randomColor,
-        shininess: 80
-      });
+      // Simplified obstacle car body
+      const bodySize = isMobile ? [1.3, 0.4, 3.0] : [1.5, 0.5, 3.5];
+      const obsBodyGeometry = new THREE.BoxGeometry(...bodySize);
+      const obsBodyMaterial = isMobile ?
+        new THREE.MeshLambertMaterial({ color: randomColor }) :
+        new THREE.MeshPhongMaterial({ color: randomColor, shininess: 80 });
+      
       const obsBody = new THREE.Mesh(obsBodyGeometry, obsBodyMaterial);
       obsBody.position.set(0, 0.65, 0);
       obsCarGroup.add(obsBody);
       
-      // Obstacle car roof
-      const obsRoofGeometry = new THREE.BoxGeometry(1.2, 0.7, 2.2);
-      const obsRoofMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
-      const obsRoof = new THREE.Mesh(obsRoofGeometry, obsRoofMaterial);
-      obsRoof.position.set(0, 1.25, -0.1);
-      obsCarGroup.add(obsRoof);
+      // Simplified obstacle car roof (only on desktop)
+      if (!isMobile) {
+        const obsRoofGeometry = new THREE.BoxGeometry(1.2, 0.7, 2.2);
+        const obsRoofMaterial = new THREE.MeshLambertMaterial({ color: 0x333333 });
+        const obsRoof = new THREE.Mesh(obsRoofGeometry, obsRoofMaterial);
+        obsRoof.position.set(0, 1.25, -0.1);
+        obsCarGroup.add(obsRoof);
+      }
       
-      // Obstacle car wheels
-      const obsWheelGeometry = new THREE.CylinderGeometry(0.35, 0.35, 0.25, 12);
-      const obsWheelMaterial = new THREE.MeshPhongMaterial({ color: 0x111111 });
+      // Simplified obstacle car wheels
+      const wheelSegments = isMobile ? 6 : 12;
+      const wheelSize = isMobile ? [0.3, 0.3, 0.2] : [0.35, 0.35, 0.25];
+      const obsWheelGeometry = new THREE.CylinderGeometry(wheelSize[0], wheelSize[1], wheelSize[2], wheelSegments);
+      const obsWheelMaterial = new THREE.MeshLambertMaterial({ color: 0x111111 });
       
       const obsWheelPositions = [
         [-1, 0.35, 1.1], [1, 0.35, 1.1],
@@ -462,22 +504,28 @@
       }
     }
     
-    // Create environment trees
+    // Create optimized environment trees
     function createTrees() {
-      const trunkGeometry = new THREE.CylinderGeometry(0.3, 0.4, 4, 8);
-      const trunkMaterial = new THREE.MeshPhongMaterial({ color: 0x8b4513 });
-      const leavesGeometry = new THREE.SphereGeometry(2.5, 8, 8);
-      const leavesMaterial = new THREE.MeshPhongMaterial({ color: 0x228b22 });
+      const treeSegments = LOD_SETTINGS[performanceMode].treeSegments;
+      const trunkSize = isMobile ? [0.25, 0.35, 3.5] : [0.3, 0.4, 4];
+      const leavesRadius = isMobile ? 2.0 : 2.5;
       
-      // Trees on both sides of the road - fixed positioning for mobile
-      // Road width is 25 units (±12.5), so trees start from ±15 minimum
-      for (let z = -100; z < 100; z += 15) {
+      const trunkGeometry = new THREE.CylinderGeometry(trunkSize[0], trunkSize[1], trunkSize[2], treeSegments);
+      const trunkMaterial = new THREE.MeshLambertMaterial({ color: 0x8b4513 });
+      const leavesGeometry = new THREE.SphereGeometry(leavesRadius, treeSegments, treeSegments);
+      const leavesMaterial = new THREE.MeshLambertMaterial({ color: 0x228b22 });
+      
+      // Optimized tree placement - fewer trees on mobile
+      const treeSpacing = isMobile ? 20 : 15;
+      const treeRange = isMobile ? 60 : 100;
+      
+      for (let z = -treeRange; z < treeRange; z += treeSpacing) {
         for (let side of [-1, 1]) { // -1 for left side, 1 for right side
           const treeGroup = new THREE.Group();
           
           // Smaller trees on mobile for better performance
-          const trunkScale = isMobile ? 0.8 : 1.0;
-          const leavesScale = isMobile ? 0.8 : 1.0;
+          const trunkScale = isMobile ? 0.7 : 1.0;
+          const leavesScale = isMobile ? 0.7 : 1.0;
           
           const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
           trunk.position.set(0, 2 * trunkScale, 0);
@@ -525,13 +573,15 @@
         camera.lookAt(0, 0, -10);
       }
 
-      // Renderer with mobile optimizations
+      // Renderer with aggressive mobile optimizations
       renderer = new THREE.WebGLRenderer({ 
-        antialias: !isMobile, // Disable antialiasing on mobile for better performance
-        powerPreference: "high-performance"
+        antialias: !isMobile, // Disable antialiasing on mobile
+        powerPreference: "high-performance",
+        logarithmicDepthBuffer: false, // Disable for better performance
+        precision: isMobile ? "mediump" : "highp" // Use medium precision on mobile
       });
       renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2));
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.0 : 1.5)); // Lower pixel ratio on mobile
       
       // Conditional shadows for mobile performance
       if (!isMobile) {
@@ -627,10 +677,16 @@
     }
 
     function spawnObstacle() {
+      // Limit number of obstacles on mobile
+      if (obstacles.length >= maxObstacles) return;
+      
       const obs = createObstacleCar();
-      const lanes = [-9.3, -7.5, -5.5, -3.5, -1.5, 0.5, 2.5, 4.5, 6.5, 8.5];
+      const lanes = isMobile ? 
+        [-8, -4, 0, 4, 8] : // Fewer lanes on mobile
+        [-9.3, -7.5, -5.5, -3.5, -1.5, 0.5, 2.5, 4.5, 6.5, 8.5];
+      
       const randomLane = lanes[Math.floor(Math.random() * lanes.length)];
-      obs.position.set(randomLane, 0, -100);
+      obs.position.set(randomLane, 0, -renderDistance);
       
       // Enable shadows for obstacle (only on desktop)
       if (!isMobile) {
@@ -648,31 +704,42 @@
 
     function updateObstacles() {
       for (let i = obstacles.length - 1; i >= 0; i--) {
-        obstacles[i].position.z += obstacleSpeed * 2;
+        const obstacle = obstacles[i];
+        obstacle.position.z += obstacleSpeed * 2;
         
-        // Animate obstacle car wheels
-        obstacles[i].traverse(function(child) {
-          if (child instanceof THREE.Mesh && child.geometry instanceof THREE.CylinderGeometry) {
-            child.rotation.x += 0.3;
-          }
-        });
+        // Optimize wheel animation - only animate visible obstacles
+        if (obstacle.position.z > -50 && obstacle.position.z < 20) {
+          obstacle.traverse(function(child) {
+            if (child instanceof THREE.Mesh && child.geometry instanceof THREE.CylinderGeometry) {
+              child.rotation.x += 0.3;
+            }
+          });
+        }
 
-        // Enhanced collision detection (more precise)
-        const xDistance = Math.abs(obstacles[i].position.x - car.position.x);
-        const zDistance = Math.abs(obstacles[i].position.z - car.position.z);
-        
-        // Only check collision if both cars are close enough
-        if (xDistance < 2.2 && zDistance < 3.2) {
-          // Add extra check to ensure we're not at road edges
-          if (car.position.x > -10.3 && car.position.x < 10.3) {
-            showGameOver();
+        // Optimized collision detection - only check nearby obstacles
+        if (Math.abs(obstacle.position.z) < 5) {
+          const xDistance = Math.abs(obstacle.position.x - car.position.x);
+          const zDistance = Math.abs(obstacle.position.z - car.position.z);
+          
+          if (xDistance < 2.2 && zDistance < 3.2) {
+            if (car.position.x > -10.3 && car.position.x < 10.3) {
+              showGameOver();
+            }
           }
         }
 
-        // Remove passed obstacles and update score
-        if (obstacles[i].position.z > 15) {
-          scene.remove(obstacles[i]);
+        // Remove passed obstacles and update score with object pooling
+        if (obstacle.position.z > 15) {
+          scene.remove(obstacle);
           obstacles.splice(i, 1);
+          
+          // Return to pool for reuse
+          obstacle.visible = false;
+          obstacle.position.set(0, 0, -100);
+          if (obstaclePool.length < 10) {
+            obstaclePool.push(obstacle);
+          }
+          
           score += 10;
           scoreDisplay.textContent = "Score: " + score;
         }
@@ -715,41 +782,62 @@
     document.getElementById("playAgainBtn").addEventListener("click", resetGame);
 
     let frameCount = 0;
-    function animate() {
+    let lastFrameTime = 0;
+    
+    function animate(currentTime = 0) {
       if (gameOver) return;
 
       requestAnimationFrame(animate);
       
+      // Frame rate limiting for mobile (30 FPS instead of 60)
+      const targetFPS = isMobile ? 30 : 60;
+      const frameDelay = 1000 / targetFPS;
+      
+      if (currentTime - lastFrameTime < frameDelay) {
+        return;
+      }
+      lastFrameTime = currentTime;
+      
       handleInput();
       frameCount++;
+      animationFrame++;
       
-      // Animate car wheels
-      wheels.forEach(wheel => {
-        wheel.rotation.x += 0.4;
-      });
+      // Optimize wheel animation - only animate every few frames on mobile
+      const wheelAnimationFreq = isMobile ? 2 : 1;
+      if (animationFrame % wheelAnimationFreq === 0) {
+        wheels.forEach(wheel => {
+          wheel.rotation.x += 0.4;
+        });
+      }
       
-      // Move road markings for speed effect
-      scene.traverse(function(child) {
-        if (child instanceof THREE.Mesh && 
-            child.material.color && 
-            child.material.color.getHex() === 0xffffff && 
-            child.geometry instanceof THREE.PlaneGeometry) {
-          child.position.z += obstacleSpeed * 2;
-          if (child.position.z > 20) {
-            child.position.z = -140;
+      // Optimize road marking movement - less frequent updates on mobile
+      const roadMarkingFreq = isMobile ? 2 : 1;
+      if (animationFrame % roadMarkingFreq === 0) {
+        scene.traverse(function(child) {
+          if (child instanceof THREE.Mesh && 
+              child.material.color && 
+              child.material.color.getHex() === 0xffffff && 
+              child.geometry instanceof THREE.PlaneGeometry) {
+            child.position.z += obstacleSpeed * 2;
+            if (child.position.z > 20) {
+              child.position.z = -140;
+            }
           }
-        }
-      });
+        });
+      }
 
-      // Spawn obstacles at different intervals based on difficulty
-      const spawnRate = Math.max(60 - Math.floor(score / 100) * 10, 30);
+      // Adjusted spawn rates for mobile
+      const baseSpawnRate = isMobile ? 80 : 60;
+      const spawnRate = Math.max(baseSpawnRate - Math.floor(score / 100) * 10, isMobile ? 50 : 30);
       if (frameCount % spawnRate === 0) {
         spawnObstacle();
       }
 
-      // Gradually increase difficulty
-      if (frameCount % 300 === 0) {
-        obstacleSpeed = Math.min(obstacleSpeed + 0.008, 0.25);
+      // Gradually increase difficulty (slower on mobile)
+      const difficultyIncreaseRate = isMobile ? 500 : 300;
+      if (frameCount % difficultyIncreaseRate === 0) {
+        const maxSpeed = isMobile ? 0.15 : 0.25;
+        obstacleSpeed = Math.min(obstacleSpeed + 0.008, maxSpeed);
       }
 
       updateObstacles();
@@ -757,12 +845,13 @@
       // Camera follows car with slight delay
       camera.position.x += (car.position.x - camera.position.x) * 0.05;
       
-      // Add visual feedback when near road edges
-      if (car.position.x < -9.5 || car.position.x > 9.5) {
-        // Add slight red tint to indicate danger zone
-        renderer.setClearColor(0x664444, 1);
-      } else {
-        renderer.setClearColor(0x87ceeb, 1);
+      // Add visual feedback when near road edges (less frequent check)
+      if (animationFrame % 5 === 0) {
+        if (car.position.x < -9.5 || car.position.x > 9.5) {
+          renderer.setClearColor(0x664444, 1);
+        } else {
+          renderer.setClearColor(0x87ceeb, 1);
+        }
       }
 
       renderer.render(scene, camera);
